@@ -198,9 +198,12 @@ func New(ctx context.Context, clientConfg clientcmd.ClientConfig, opts *Options)
 		return nil, err
 	}
 
-	extensionAPIServer, err := ext.NewExtensionAPIServer(wranglerContext)
-	if err != nil {
-		return nil, fmt.Errorf("extension api server: %w", err)
+	var extensionAPIServer steveserver.ExtensionAPIServer
+	if strings.EqualFold(settings.ImperativeApiExtension.Get(), "true") {
+		extensionAPIServer, err = ext.NewExtensionAPIServer(wranglerContext)
+		if err != nil {
+			return nil, fmt.Errorf("extension api server: %w", err)
+		}
 	}
 
 	steve, err := steveserver.New(ctx, restConfig, &steveserver.Options{

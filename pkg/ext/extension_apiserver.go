@@ -13,10 +13,14 @@ import (
 	"github.com/rancher/rancher/pkg/wrangler"
 	steveext "github.com/rancher/steve/pkg/ext"
 	steveserver "github.com/rancher/steve/pkg/server"
+
+	// apiregv1 "github.com/rancher/wrangler/v3/pkg/generated/controllers/apiregistration.k8s.io/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"k8s.io/apiserver/pkg/endpoints/request"
+	apiregv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 )
 
 const (
@@ -25,7 +29,36 @@ const (
 	//
 	// The main kube-apiserver will connect to that port (through a tunnel).
 	Port = 6666
+
+	Name = "v1.ext.cattle.io"
 )
+
+func createAPIService(ctx *wrangler.Context, extensions steveserver.ExtensionAPIServer) error {
+	port := int32(Port)
+
+	_, err := ctx.API.APIService().Create(&apiregv1.APIService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: Name,
+		},
+		Spec: apiregv1.APIServiceSpec{
+			Group:                "ext.cattle.io",
+			GroupPriorityMinimum: 100,
+			CABundle:             []byte{}, // todo: get from steve server
+			Service: &apiregv1.ServiceReference{
+				Namespace: "cattle-system",
+				Name:      "imperative-api-extension",
+				Port:      &port,
+			},
+			Version:         "v1",
+			VersionPriority: 100,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to register APIService: %w", err)
+	}
+
+	return err
+}
 
 func NewExtensionAPIServer(wranglerContext *wrangler.Context) (steveserver.ExtensionAPIServer, error) {
 	// Only the local cluster runs an extension API server
@@ -105,6 +138,10 @@ func NewExtensionAPIServer(wranglerContext *wrangler.Context) (steveserver.Exten
 
 	if err = extstores.InstallStores(extensionAPIServer, scheme); err != nil {
 		return nil, fmt.Errorf("install stores: %w", err)
+	}
+
+	if err := createAPIService(wranglerContext, extensionAPIServer); err != nil {
+		return nil, fmt.Errorf("create APIService: %w", err)
 	}
 
 	return extensionAPIServer, nil
